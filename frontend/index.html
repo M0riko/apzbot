@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Пральня — бронювання</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div id="app-loading" class="app-loading">
+    <div class="spinner"></div>
+  </div>
+
+  <header class="app-header">
+    <div class="header-content">
+      <h1>Пральня</h1>
+      <div class="user-info">
+        <div class="user-avatar" id="tg-avatar"></div>
+        <div class="user-details">
+          <span id="tg-user-name" class="user-name">Завантаження...</span>
+          <span id="tg-user-login" class="user-login"></span>
+        </div>
+        <button id="openProfileBtn" class="btn-icon" style="margin:0; width:32px; height:32px; border-radius:50%; font-size:12px; margin-left:8px;" title="Редагувати профіль">✏️</button>
+        <button id="openFaqBtn" class="btn-icon" style="margin:0; width:32px; height:32px; border-radius:50%; font-size:12px; margin-left:4px;" title="Питання та відповіді">❓</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="controls glass-panel">
+      <div class="date-control">
+        <label for="datePicker">Оберіть дату</label>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button id="prevDateBtn" class="btn-icon" style="margin-top:0; width:40px; height:40px;">←</button>
+          <input type="date" id="datePicker" />
+          <button id="nextDateBtn" class="btn-icon" style="margin-top:0; width:40px; height:40px;">→</button>
+        </div>
+      </div>
+      <button id="refreshBtn" class="btn-icon" aria-label="Оновити">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+    </section>
+
+    <section class="grid-section glass-panel">
+      <div class="grid-header">
+        <div class="grid-cell head time-col">Час</div>
+        <div class="grid-cell head">М 1</div>
+        <div class="grid-cell head">М 2</div>
+        <div class="grid-cell head">М 3</div>
+      </div>
+      <div id="grid" class="grid-body">
+        <!-- Grid will be populated by JS -->
+      </div>
+    </section>
+
+    <section class="card glass-panel">
+      <div class="card-header">
+        <h2>Баланс</h2>
+        <div class="balance-badge">
+          <span id="balance" class="balance-number">0</span> 
+          <span class="balance-text">прань</span>
+        </div>
+      </div>
+      <div id="monthly-limit-container" class="monthly-limit-info">
+        Ліміт на місяць: <span id="monthly-usage">0</span> / <span id="monthly-limit">12</span>
+      </div>
+      <div class="actions">
+        <button id="buySingleBtn" class="btn-primary">
+          <span>1 прання</span>
+          <span class="price" id="singlePrice">50 ₴</span>
+        </button>
+        <button id="buyPassBtn" class="btn-secondary">
+          <span>Абонемент</span>
+          <span class="price" id="passPrice">150 ₴</span>
+        </button>
+      </div>
+      <p class="hint">Коментар до платежу заповниться автоматично 🤖</p>
+      <div style="text-align: center; margin-top: 12px; display: flex; justify-content: space-between;">
+        <button id="openClaimBtn" class="btn-link">Не прийшла оплата?</button>
+        <button id="openPrivilegeBtn" class="btn-link" style="color: var(--success-color);">Отримати пільгу</button>
+      </div>
+    </section>
+
+    <div style="text-align: center; margin-top: 20px; font-size: 13px; color: var(--hint-color); line-height: 1.5; padding: 0 10px;">
+      Якщо будуть якісь пропозиції або питання, зверніться в телеграм <a href="https://t.me/devapz" target="_blank" style="color: var(--button-color); text-decoration: none; font-weight: bold;">@devapz</a>
+    </div>
+  </main>
+
+  <footer style="text-align: center; padding: 20px 10px; font-size: 11px; color: var(--hint-color); opacity: 0.6;">
+    Developed by Andrew D.
+  </footer>
+
+  <div id="privilegeModal" class="modal hidden">
+    <div class="modal-content glass-panel">
+      <h3>Отримання пільги</h3>
+      <p class="hint" style="text-align:left; margin-bottom: 16px;">
+        Для отримання пільги надішліть ваше підтвердження пільги (студентського квитка або іншого документа) в чат з ботом. Після підтвердження ціни будуть знижені.
+      </p>
+      <div style="display:flex; gap:8px;">
+        <button id="closePrivilegeBtn" class="btn-secondary" style="flex:1;">Назад</button>
+        <button id="goToBotBtn" class="btn-primary" style="flex:1;">Відкрити бота</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="registrationModal" class="modal hidden">
+    <div class="modal-content glass-panel" style="max-height: 90vh; overflow-y: auto;">
+      <h3 style="text-align: center; margin-bottom: 16px;">Ласкаво просимо! 👋</h3>
+      
+      <div class="onboarding-rules" style="background: var(--input-bg); padding: 12px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; border: 1px solid var(--card-border);">
+        <p style="font-weight: 700; margin-bottom: 8px; color: var(--button-color);">Ознайомтесь з правилами:</p>
+        <ul style="list-style: none; display: flex; flex-direction: column; gap: 8px;">
+          <li>✅ <b>Бронювання:</b> Обирайте дату та вільний слот у сітці.</li>
+          <li>❌ <b>Скасування:</b> Можливе не пізніше ніж за 30 хв до початку.</li>
+          <li>💰 <b>Оплата:</b> Обов'язково не змінюйте коментар у додатку Monobank.</li>
+          <li>🎓 <b>Пільги:</b> Надішліть ваше підтвердження пільги в чат-бот після реєстрації.</li>
+        </ul>
+      </div>
+
+      <div class="input-group">
+        <label for="regFullName">Ваше ПІБ повністю</label>
+        <input type="text" id="regFullName" placeholder="Іванов Іван Іванович" class="input-field" />
+      </div>
+
+      <div class="input-group checkbox-group" style="margin-top: 12px; display: flex; align-items: center; gap: 10px;">
+        <input type="checkbox" id="regIsPrivileged" />
+        <label for="regIsPrivileged" style="margin-bottom: 0;">Маю пільги (студент, тощо)</label>
+      </div>
+
+      <div class="input-group checkbox-group" style="margin-top: 12px; display: flex; align-items: flex-start; gap: 10px; padding: 10px; border: 1px dashed var(--card-border); border-radius: var(--radius-sm);">
+        <input type="checkbox" id="regAgreeRules" style="margin-top: 3px;" />
+        <label for="regAgreeRules" style="margin-bottom: 0; font-size: 12px; color: var(--hint-color); line-height: 1.4;">
+          Я ознайомився з правилами користування та FAQ. Зобов'язуюсь вчасно звільняти пральну машину.
+        </label>
+      </div>
+
+      <div style="margin-top: 20px;">
+        <button id="submitRegistrationBtn" class="btn-primary" style="width: 100%; opacity: 0.5;" disabled>Зареєструватися</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="claimModal" class="modal hidden">
+    <div class="modal-content glass-panel">
+      <h3>Пошук оплати</h3>
+      <p class="hint" style="text-align:left; margin-bottom: 12px;">Введіть точну суму поповнення (в грн), яку ви переказали на банку.</p>
+      <input type="number" id="claimAmount" placeholder="Наприклад: 50" class="input-field" />
+      <div style="display:flex; gap:8px; margin-top: 16px;">
+        <button id="closeClaimBtn" class="btn-secondary" style="flex:1;">Скасувати</button>
+        <button id="submitClaimBtn" class="btn-primary" style="flex:1;">Знайти</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="profileModal" class="modal hidden">
+    <div class="modal-content glass-panel">
+      <h3>Редагувати профіль</h3>
+      <p class="hint" style="text-align:left; margin-bottom:16px;">Ви можете надіслати запит на зміну ПІБ. Зміна вступить в силу після підтвердження адміністратором.</p>
+      <div class="input-group">
+        <label for="profileFullName">Нове ПІБ</label>
+        <input type="text" id="profileFullName" class="input-field" placeholder="Прізвище Ім'я По батькові">
+      </div>
+      <div style="display:flex; gap:8px; margin-top: 24px;">
+        <button id="closeProfileBtn" class="btn-secondary" style="flex:1;">Скасувати</button>
+        <button id="submitProfileBtn" class="btn-primary" style="flex:1;">Надіслати</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="faqModal" class="modal hidden">
+    <div class="modal-content glass-panel" style="max-height: 80vh; overflow-y: auto;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="margin: 0;">Питання та відповіді</h3>
+        <button id="closeFaqBtnTop" class="btn-icon" style="margin:0; width:30px; height:30px;">✕</button>
+      </div>
+      
+      <div class="faq-list">
+        <div class="faq-item">
+          <div class="faq-question">Як забронювати прання? <span>+</span></div>
+          <div class="faq-answer">Оберіть потрібну дату, знайдіть вільний слот (зелений колір) та натисніть на нього. Бронювання автоматично закріпиться за вами.</div>
+        </div>
+        
+        <div class="faq-item">
+          <div class="faq-question">Як скасувати бронювання? <span>+</span></div>
+          <div class="faq-answer">Знайдіть своє бронювання (синій колір) у сітці та натисніть на нього. Скасування можливе не пізніше ніж за 30 хвилин до початку.</div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-question">Як поповнити баланс? <span>+</span></div>
+          <div class="faq-answer">Натисніть кнопку "1 прання" або "Абонемент" у розділі Баланс. Вас перенаправить у додаток Monobank. Обов'язково не змінюйте коментар до платежу!</div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-question">Оплата пройшла, але баланс 0. Що робити? <span>+</span></div>
+          <div class="faq-answer">Якщо ви змінили коментар або система не побачила оплату, натисніть "Не прийшла оплата?" під кнопками балансу та введіть точну суму переказу.</div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-question">Як отримати пільгу? <span>+</span></div>
+          <div class="faq-answer">Натисніть "Отримати пільгу" під балансом та дотримуйтесь інструкцій: надішліть ваше підтвердження пільги в чат з ботом. Адмін перевірить його та знизить ціни для вас.</div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-question">Який ліміт бронювань? <span>+</span></div>
+          <div class="faq-answer">Для звичайних користувачів діє стандартний ліміт (зазвичай 12 прань на місяць). Ви можете бачити свій залишок під балансом.</div>
+        </div>
+      </div>
+      
+      <button id="closeFaqBtn" class="btn-primary" style="margin-top: 20px; width: 100%;">Зрозуміло</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

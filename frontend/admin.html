@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Адмін-панель — Пральня</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://unpkg.com/docx@8.2.2/build/index.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f0f1a;
+      --surface: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.08);
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --danger: #ef4444;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      background-image: radial-gradient(ellipse at 20% 0%, rgba(99,102,241,0.15) 0%, transparent 50%),
+                        radial-gradient(ellipse at 80% 100%, rgba(139,92,246,0.1) 0%, transparent 50%);
+    }
+
+    /* LOGIN */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .login-card {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      width: 100%;
+      max-width: 360px;
+      text-align: center;
+    }
+    .login-card h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .login-card p { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    .input-field {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.3);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s;
+      margin-bottom: 12px;
+    }
+    .input-field:focus { border-color: var(--accent); }
+    #login-error { color: var(--danger); font-size: 13px; min-height: 20px; margin-bottom: 8px; }
+
+    /* HEADER */
+    #main-app { display: none; flex-direction: column; min-height: 100vh; }
+    header {
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(20px);
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header .badge {
+      background: rgba(99,102,241,0.2);
+      color: var(--accent-hover);
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    /* TABS */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding: 12px 16px 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab-btn {
+      white-space: nowrap;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tab-btn.active {
+      background: rgba(99,102,241,0.15);
+      color: var(--accent-hover);
+    }
+    .tab-count {
+      background: rgba(99,102,241,0.3);
+      color: var(--accent-hover);
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-weight: 700;
+    }
+
+    /* CONTENT */
+    .tab-content { display: none; padding: 16px; }
+    .tab-content.active { display: block; }
+
+    /* STATS */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+    }
+    .stat-card .stat-val {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--accent-hover);
+    }
+    .stat-card .stat-lbl {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* SEARCH */
+    .search-box {
+      position: relative;
+      margin-bottom: 12px;
+    }
+    .search-box input {
+      padding-left: 36px;
+    }
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+    }
+
+    /* CARDS */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      margin-bottom: 8px;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: rgba(99,102,241,0.3); }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; }
+    .card-info { flex: 1; min-width: 0; }
+    .card-name { font-weight: 600; font-size: 15px; truncate: ellipsis; overflow: hidden; white-space: nowrap; }
+    .card-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .card-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+
+    /* BALANCE CONTROL */
+    .balance-ctrl {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .balance-val {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--success);
+      min-width: 50px;
+      text-align: center;
+    }
+
+    /* BUTTONS */
+    .btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.18s;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-danger { background: rgba(239,68,68,0.15); color: var(--danger); }
+    .btn-danger:hover { background: rgba(239,68,68,0.25); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .btn-icon:hover { background: rgba(99,102,241,0.2); border-color: var(--accent); }
+    .btn-warn { background: rgba(245,158,11,0.15); color: var(--warning); border: none; }
+    .btn-warn:hover { background: rgba(245,158,11,0.25); }
+
+    /* BADGES */
+    .badge-priv {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .badge-priv.on { background: rgba(245,158,11,0.2); color: var(--warning); }
+    .badge-priv.off { background: rgba(255,255,255,0.05); color: var(--muted); }
+
+    /* STATUS BADGES */
+    .status { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+    .status-pending { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .status-success { background: rgba(16,185,129,0.15); color: var(--success); }
+    .status-expired { background: rgba(239,68,68,0.15); color: var(--danger); }
+    .status-active { background: rgba(99,102,241,0.15); color: var(--accent-hover); }
+    .status-unclaimed { background: rgba(245,158,11,0.15); color: var(--warning); }
+
+    /* TOAST */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: rgba(30,30,50,0.95);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 500;
+      z-index: 9999;
+      transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+      backdrop-filter: blur(20px);
+      white-space: nowrap;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* LOADING */
+    .spinner-sm {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-row { text-align: center; padding: 40px; color: var(--muted); }
+
+    /* EMPTY */
+    .empty { text-align: center; padding: 40px 20px; color: var(--muted); }
+    .empty .emoji { font-size: 36px; margin-bottom: 12px; }
+
+    /* CLAIM MODAL */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+      z-index: 500;
+      opacity: 1;
+      transition: opacity 0.2s;
+    }
+    .modal-overlay.hidden { opacity: 0; pointer-events: none; }
+    .modal-box {
+      background: #1a1a2e;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      width: 100%;
+      max-width: 400px;
+    }
+    .modal-box h3 { margin-bottom: 14px; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+    .modal-actions button { flex: 1; }
+
+    @media (min-width: 768px) {
+      .stats-grid { grid-template-columns: repeat(4, 1fr); }
+      .tab-content { max-width: 900px; margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div style="font-size:40px;margin-bottom:12px">🧺</div>
+    <h1>Адмін-панель</h1>
+    <p>Введіть секретний ключ для доступу</p>
+    <input type="password" class="input-field" id="secretInput" placeholder="Секретний ключ" autocomplete="current-password" />
+    <div id="login-error"></div>
+    <button class="btn btn-primary" id="loginBtn" style="width:100%;padding:12px;">Увійти</button>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="main-app">
+  <header>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <h1>🧺 Адмін-панель</h1>
+      <a href="#" id="openBotLink" target="_blank" class="btn btn-sm" style="background: rgba(255,255,255,0.1); color: var(--text); text-decoration: none; display: none;">Відкрити бота</a>
+    </div>
+    <span class="badge" id="admin-badge">Адмін</span>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="users">👥 Користувачі <span class="tab-count" id="cnt-users">0</span></button>
+    <button class="tab-btn" data-tab="bookings">📅 Бронювання <span class="tab-count" id="cnt-bookings">0</span></button>
+    <button class="tab-btn" data-tab="payments">💳 Оплати <span class="tab-count" id="cnt-payments">0</span></button>
+    <button class="tab-btn" data-tab="privileges">🎓 Пільги <span class="tab-count" id="cnt-privileges">0</span></button>
+    <button class="tab-btn" data-tab="reports">📊 Звіти</button>
+    <button class="tab-btn" data-tab="settings">⚙️ Налаштування</button>
+  </div>
+
+  <!-- USERS TAB -->
+  <div class="tab-content active" id="tab-users">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-val" id="s-users">—</div><div class="stat-lbl">Користувачів</div></div>
+      <div class="stat-card"><div class="stat-val" id="s-balance">—</div><div class="stat-lbl">Прань в системі</div></div>
+    </div>
+    <div class="search-box">
+      <svg class="search-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" class="input-field" id="userSearch" placeholder="Пошук за ID або @username..." style="margin:0" />
+    </div>
+    <div id="users-list"><div class="loading-row"><div class="spinner-sm"></div></div></div>
+  </div>
+
+  <!-- BOOKINGS TAB -->
+  <div class="tab-content" id="tab-bookings">
+    <div class="stats-grid" style="grid-template-columns:1fr 1fr">
+      <div class="stat-card"><div class="stat-val" id="s-bookings">—</div><div class="stat-lbl">Активних бронювань</div></div>
+      <div class="stat-card"><div class="stat-val" id="s-bookings-all">—</div><div class="stat-lbl">Всього бронювань</div></div>
+    </div>
+    <div class="search-box">
+      <svg class="search-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" class="input-field" id="bookingSearch" placeholder="Пошук за датою, пралкою або прізвищем..." style="margin:0" />
+    </div>
+    <div id="bookings-list"><div class="loading-row"><div class="spinner-sm"></div></div></div>
+  </div>
+
+  <!-- PAYMENTS TAB -->
+  <div class="tab-content" id="tab-payments">
+    <div class="stats-grid" style="grid-template-columns:1fr 1fr">
+      <div class="stat-card"><div class="stat-val" id="s-success">—</div><div class="stat-lbl">Успішних оплат</div></div>
+      <div class="stat-card"><div class="stat-val" id="s-unresolved">—</div><div class="stat-lbl">Незарахованих</div></div>
+    </div>
+    <h3 style="margin-bottom:10px;font-size:14px;color:var(--muted)">ТРАНЗАКЦІЇ</h3>
+    <div id="transactions-list"><div class="loading-row"><div class="spinner-sm"></div></div></div>
+    <h3 style="margin:16px 0 10px;font-size:14px;color:var(--muted)">НЕЗАРАХОВАНІ ПЛАТЕЖІ</h3>
+    <div id="unresolved-list"></div>
+  </div>
+
+
+  <!-- PRIVILEGES TAB -->
+  <div class="tab-content" id="tab-privileges">
+    <div id="privileges-list"><div class="loading-row"><div class="spinner-sm"></div></div></div>
+  </div>
+
+  <!-- REPORTS TAB -->
+  <div class="tab-content" id="tab-reports">
+    <div class="card" style="margin-bottom:20px;">
+      <h3 style="margin-bottom:12px; font-size:16px;">Генерація звіту</h3>
+      <div style="display:flex; gap:10px; align-items:flex-end;">
+        <div style="flex:1;">
+          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Початкова дата</label>
+          <input type="date" id="reportStartDate" class="input-field" style="margin:0">
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Кінцева дата</label>
+          <input type="date" id="reportEndDate" class="input-field" style="margin:0">
+        </div>
+        <button class="btn btn-primary" onclick="generateReport()" style="padding:12px 20px;">Сформувати</button>
+      </div>
+      <div id="report-actions" style="margin-top:16px; display:none; gap:10px;">
+        <button class="btn btn-sm" onclick="exportPDF()" style="background:#f43f5e; color:white; flex:1">📄 Завантажити PDF</button>
+        <button class="btn btn-sm" onclick="exportWord()" style="background:#2563eb; color:white; flex:1">📝 Завантажити Word (.docx)</button>
+      </div>
+    </div>
+    <div id="report-results" style="margin-top:20px;"></div>
+  </div>
+
+  <!-- SETTINGS TAB -->
+  <div class="tab-content" id="tab-settings">
+    <div class="card">
+      <h3 style="margin-bottom:16px;">Налаштування тарифів та лімітів</h3>
+      
+      <div class="input-group" style="margin-bottom:20px;">
+        <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">Місячний ліміт бронювань (за замовчуванням)</label>
+        <div style="display:flex; gap:10px;">
+          <input type="number" id="settingMonthlyLimit" class="input-field" style="margin:0; width:100px;">
+          <button class="btn btn-primary" onclick="updateSetting('monthly_limit', document.getElementById('settingMonthlyLimit').value)">Зберегти</button>
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-bottom:20px;">
+        <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">Ціна за 1 прання (грн)</label>
+        <div style="display:flex; gap:10px;">
+          <input type="number" id="settingPricePerWash" class="input-field" style="margin:0; width:100px;">
+          <button class="btn btn-primary" onclick="updateSetting('price_per_wash', document.getElementById('settingPricePerWash').value)">Зберегти</button>
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-bottom:20px;">
+        <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">Ціна за 1 прання для пільговиків (грн)</label>
+        <div style="display:flex; gap:10px;">
+          <input type="number" id="settingPricePerWashPrivileged" class="input-field" style="margin:0; width:100px;">
+          <button class="btn btn-primary" onclick="updateSetting('price_per_wash_privileged', document.getElementById('settingPricePerWashPrivileged').value)">Зберегти</button>
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-bottom:20px;">
+        <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">Кількість прань в абонементі</label>
+        <div style="display:flex; gap:10px;">
+          <input type="number" id="settingSubscriptionWashes" class="input-field" style="margin:0; width:100px;">
+          <button class="btn btn-primary" onclick="updateSetting('subscription_washes_count', document.getElementById('settingSubscriptionWashes').value)">Зберегти</button>
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-bottom:20px;">
+        <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">Ціна абонемента (грн)</label>
+        <div style="display:flex; gap:10px;">
+          <input type="number" id="settingSubscriptionPrice" class="input-field" style="margin:0; width:100px;">
+          <button class="btn btn-primary" onclick="updateSetting('subscription_price', document.getElementById('settingSubscriptionPrice').value)">Зберегти</button>
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-bottom:20px;">
+        <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">Ціна абонемента для пільговиків (грн)</label>
+        <div style="display:flex; gap:10px;">
+          <input type="number" id="settingSubscriptionPricePrivileged" class="input-field" style="margin:0; width:100px;">
+          <button class="btn btn-primary" onclick="updateSetting('subscription_price_privileged', document.getElementById('settingSubscriptionPricePrivileged').value)">Зберегти</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- CLAIM MODAL -->
+<div class="modal-overlay hidden" id="claimModal">
+  <div class="modal-box">
+    <h3>Зарахувати платіж</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Виберіть користувача та кількість прань для нарахування</p>
+    <input type="number" class="input-field" id="claimWashes" placeholder="Кількість прань (напр. 1 або 8)" />
+    <select class="input-field" id="claimUserId" style="cursor:pointer"></select>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="claimCancel">Скасувати</button>
+      <button class="btn btn-primary" id="claimSubmit">Зарахувати</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- IMAGE MODAL -->
+<div class="modal-overlay hidden" id="imageModal">
+  <div class="modal-box" style="text-align: center; max-width: 500px;">
+    <h3>Фото документа</h3>
+    <img id="imageModalImg" src="" alt="Завантаження..." style="max-width: 100%; max-height: 60vh; border-radius: var(--radius-sm); margin-bottom: 16px; object-fit: contain; background: rgba(0,0,0,0.2); min-height: 200px;" />
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="imageModalClose" style="background: rgba(255,255,255,0.1); color: var(--text);">Закрити</button>
+    </div>
+  </div>
+</div>
+
+<script src="admin.js"></script>
+</body>
+</html>
