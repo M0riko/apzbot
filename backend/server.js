@@ -61,6 +61,9 @@ function prepareQuery(sql, params) {
     pgSql += ' ON CONFLICT (key) DO NOTHING';
   }
 
+  // Replace MAX(a, b) with GREATEST(a, b) for PostgreSQL
+  pgSql = pgSql.replace(/MAX\(([^,]+),([^)]+)\)/gi, 'GREATEST($1,$2)');
+
   // Replace ? placeholders with $1, $2, etc.
   let index = 1;
   pgSql = pgSql.replace(/\?/g, () => '$' + (index++));
