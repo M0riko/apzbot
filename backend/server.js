@@ -86,6 +86,7 @@ if (usePostgres) {
     let pgSchema = schema
       .replace(/PRAGMA foreign_keys = ON;/gi, '')
       .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/gi, 'SERIAL PRIMARY KEY')
+      .replace(/\b(id|user_id|userId)\s+INTEGER\b/g, '$1 BIGINT')
       .replace(/datetime\(['"]now['"]\)/gi, 'CURRENT_TIMESTAMP')
       .replace(/INSERT OR IGNORE INTO Settings/gi, 'INSERT INTO Settings')
       .replace(/VALUES \('monthly_limit', '12'\);/gi, "VALUES ('monthly_limit', '12') ON CONFLICT (key) DO NOTHING;");
