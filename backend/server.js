@@ -739,13 +739,13 @@ app.post('/api/webhooks/monobank', async (req, res) => {
     }
 
     const existingTx = await dbGet(
-      'SELECT * FROM Transactions WHERE paymentKey = ? AND status = ? AND expiresAt > datetime("now")',
+      "SELECT * FROM Transactions WHERE paymentKey = ? AND status = ? AND expiresAt > datetime('now')",
       [comment, 'PENDING']
     );
 
     if (existingTx) {
       console.log(`[Monobank Webhook] Found matching transaction for ${comment}. Crediting ${existingTx.washesAdded} washes.`);
-      await dbRun('UPDATE Transactions SET status = ?, actualAmount = ?, updatedAt = datetime("now") WHERE id = ?', ['SUCCESS', amount, existingTx.id]);
+      await dbRun("UPDATE Transactions SET status = ?, actualAmount = ?, updatedAt = datetime('now') WHERE id = ?", ['SUCCESS', amount, existingTx.id]);
       await dbRun('UPDATE Users SET balance = balance + ? WHERE id = ?', [existingTx.washesAdded, existingTx.userId]);
       bot.sendMessage(existingTx.userId, `✅ Оплату ${amount} грн отримано! Додано ${existingTx.washesAdded} прань.`).catch(console.error);
     } else {
@@ -815,7 +815,7 @@ app.post('/api/payments/claim', async (req, res) => {
 });
 
 setInterval(() => {
-  dbRun('UPDATE Transactions SET status = "EXPIRED", updatedAt = datetime("now") WHERE status = "PENDING" AND expiresAt < datetime("now")')
+  dbRun("UPDATE Transactions SET status = 'EXPIRED', updatedAt = datetime('now') WHERE status = 'PENDING' AND expiresAt < datetime('now')")
     .catch(console.error);
 }, 5 * 60 * 1000);
 
@@ -867,7 +867,7 @@ async function processMonoTransaction(tx) {
 
   // Check already processed
   const already = await dbGet('SELECT id FROM UnresolvedPayments WHERE monobankTransactionId = ?', [monoId]);
-  const alreadySuccess = await dbGet('SELECT id FROM Transactions WHERE status = "SUCCESS" AND paymentKey = ?', [comment]);
+  const alreadySuccess = await dbGet("SELECT id FROM Transactions WHERE status = 'SUCCESS' AND paymentKey = ?", [comment]);
   if (already || alreadySuccess) return; // skip duplicates
 
   if (!comment) {
@@ -876,12 +876,12 @@ async function processMonoTransaction(tx) {
   }
 
   const existingTx = await dbGet(
-    'SELECT * FROM Transactions WHERE paymentKey = ? AND status = ? AND expiresAt > datetime("now")',
+    "SELECT * FROM Transactions WHERE paymentKey = ? AND status = ? AND expiresAt > datetime('now')",
     [comment, 'PENDING']
   );
 
   if (existingTx) {
-    await dbRun('UPDATE Transactions SET status = ?, actualAmount = ?, updatedAt = datetime("now") WHERE id = ?', ['SUCCESS', amount, existingTx.id]);
+    await dbRun("UPDATE Transactions SET status = ?, actualAmount = ?, updatedAt = datetime('now') WHERE id = ?", ['SUCCESS', amount, existingTx.id]);
     await dbRun('UPDATE Users SET balance = balance + ? WHERE id = ?', [existingTx.washesAdded, existingTx.userId]);
     console.log(`[Monobank Poller] Зараховано ${amount} грн (${comment}) → +${existingTx.washesAdded} прань`);
   } else {
