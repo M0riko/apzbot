@@ -700,6 +700,10 @@ app.post('/api/payments/create', async (req, res) => {
   }
 });
 
+app.get('/api/webhooks/monobank', (req, res) => {
+  res.status(200).send('OK');
+});
+
 app.post('/api/webhooks/monobank', async (req, res) => {
   res.status(200).send('OK');
 
@@ -887,7 +891,7 @@ async function processMonoTransaction(tx) {
 }
 
 // Poll every 60 seconds
-let lastPollTime = Math.floor(Date.now() / 1000) - 120; // start 2 min back
+let lastPollTime = Math.floor(Date.now() / 1000) - 24 * 60 * 60; // start 24 hours back to recover offline payments
 
 async function pollMonobank() {
   const jarId = await getMonoJarId();
