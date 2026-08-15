@@ -1234,14 +1234,18 @@ bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
 
   try {
-    await bot.setChatMenuButton({
-      chat_id: chatId,
-      menu_button: {
-        type: 'web_app',
-        text: 'Пральня 🧺',
-        web_app: { url: WEBAPP_URL }
-      }
-    });
+    const currentButton = await bot.getChatMenuButton({ chat_id: chatId });
+    if (!currentButton || currentButton.type !== 'web_app' || !currentButton.web_app || currentButton.web_app.url !== WEBAPP_URL) {
+      await bot.setChatMenuButton({
+        chat_id: chatId,
+        menu_button: {
+          type: 'web_app',
+          text: 'Пральня 🧺',
+          web_app: { url: WEBAPP_URL }
+        }
+      });
+      console.log(`Menu button updated for chat ${chatId}`);
+    }
   } catch (e) { console.error('Menu update error:', e.message); }
 
   bot.sendMessage(
@@ -1263,17 +1267,26 @@ bot.onText(/\/start/, async (msg) => {
 });
 
 // Update menu globally on startup
-bot.getMe().then(me => {
+bot.getMe().then(async (me) => {
   botUsername = me.username;
   console.log('Bot username:', botUsername);
-  bot.setChatMenuButton({
-    menu_button: {
-      type: 'web_app',
-      text: 'Пральня 🧺',
-      web_app: { url: WEBAPP_URL }
+  try {
+    const currentButton = await bot.getChatMenuButton();
+    if (!currentButton || currentButton.type !== 'web_app' || !currentButton.web_app || currentButton.web_app.url !== WEBAPP_URL) {
+      await bot.setChatMenuButton({
+        menu_button: {
+          type: 'web_app',
+          text: 'Пральня 🧺',
+          web_app: { url: WEBAPP_URL }
+        }
+      });
+      console.log('Global menu button updated');
+    } else {
+      console.log('Global menu button is already up-to-date');
     }
-  }).then(() => console.log('Global menu button updated'))
-    .catch(err => console.error('Global menu update error:', err.message));
+  } catch (err) {
+    console.error('Global menu update error:', err.message);
+  }
 }).catch(console.error);
 
 bot.on('photo', async (msg) => {
