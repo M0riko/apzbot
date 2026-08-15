@@ -1,3 +1,6 @@
+// Force timezone to Europe/Kyiv so local Date operations match the target audience's timezone
+process.env.TZ = 'Europe/Kyiv';
+
 const path = require('path');
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
@@ -7,6 +10,39 @@ const { Server } = require('socket.io');
 const crypto = require('crypto');
 const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+// Helper to get local date string in YYYY-MM-DD format (respecting process.env.TZ)
+function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+const camelCaseMap = {
+  userid: 'userId',
+  requestedamount: 'requestedAmount',
+  actualamount: 'actualAmount',
+  paymentkey: 'paymentKey',
+  expiresat: 'expiresAt',
+  washesadded: 'washesAdded',
+  createdat: 'createdAt',
+  updatedat: 'updatedAt',
+  monobanktransactionid: 'monobankTransactionId',
+  sendername: 'senderName',
+  receivedat: 'receivedAt'
+};
+
+function normalizeRow(row) {
+  if (!row) return row;
+  const normalized = { ...row };
+  for (const [lower, camel] of Object.entries(camelCaseMap)) {
+    if (lower in normalized) {
+      normalized[camel] = normalized[lower];
+    }
+  }
+  return normalized;
+}
 
 const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -165,7 +201,7 @@ async function dbGet(sql, params = []) {
   if (usePostgres) {
     const prepared = prepareQuery(sql, params);
     const res = await pgPool.query(prepared.sql, prepared.params);
-    return res.rows[0];
+    return normalizeRow(res.rows[0]);
   } else {
     return new Promise((resolve, reject) => {
       db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
@@ -177,7 +213,7 @@ async function dbAll(sql, params = []) {
   if (usePostgres) {
     const prepared = prepareQuery(sql, params);
     const res = await pgPool.query(prepared.sql, prepared.params);
-    return res.rows;
+    return res.rows.map(normalizeRow);
   } else {
     return new Promise((resolve, reject) => {
       db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
@@ -392,7 +428,7 @@ app.post('/api/profile/request', async (req, res) => {
 
 app.get('/api/guard/bookings', async (req, res) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     
     const bookings = await dbAll(
       `SELECT b.*, u.full_name, u.username, m.name as machine_name 
@@ -423,7 +459,7 @@ app.post('/api/book', async (req, res) => {
       return res.json({ ok: false, error: 'Invalid time slot' });
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     if (date < today) {
       return res.json({ ok: false, error: 'Не можна бронювати на минулу дату' });
     }
@@ -516,7 +552,7 @@ app.post('/api/book/cancel', async (req, res) => {
     }
 
     // Check if the date is in the past
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     if (date < today) {
       return res.json({ ok: false, error: 'Не можна скасувати минулі бронювання' });
     }
@@ -627,12 +663,21 @@ app.post('/api/webhooks/monobank', async (req, res) => {
   try {
     const data = req.body;
     console.log('[Monobank Webhook] Received data:', JSON.stringify(data));
-    if (!data || !data.data || !data.data.statementItem) {
-      console.log('[Monobank Webhook] Missing statementItem in body.data');
+    
+    let tx = null;
+    if (data) {
+      if (data.data && data.data.statementItem) {
+        tx = data.data.statementItem;
+      } else if (data.statementItem) {
+        tx = data.statementItem;
+      }
+    }
+
+    if (!tx) {
+      console.log('[Monobank Webhook] Missing statementItem in body.data or body');
       return;
     }
 
-    const tx = data.data.statementItem;
     const amount = tx.amount / 100;
     const comment = tx.comment ? tx.comment.trim().toUpperCase() : '';
     const monoId = tx.id;
@@ -1305,7 +1350,7 @@ bot.on('callback_query', async (query) => {
 async function sendReminders() {
   try {
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = getLocalDateString(now);
     
     // Find active bookings for today
     const bookings = await dbAll("SELECT * FROM Bookings WHERE date = ? AND status = 'active'", [todayStr]);
