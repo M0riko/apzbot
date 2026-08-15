@@ -182,7 +182,12 @@ function renderGrid(bookings, myId) {
   });
 }
 
-async function loadState() {
+async function loadState(skipMaintenanceCheck = false) {
+  if (!skipMaintenanceCheck) {
+    const isBlocked = await checkAppMaintenance();
+    if (isBlocked) return;
+  }
+
   showLoading();
   const date = elDate.value;
   try {
@@ -353,52 +358,6 @@ async function checkAppMaintenance() {
   }
 }
 
-async function loadState(skipMaintenanceCheck = false) {
-  if (!skipMaintenanceCheck) {
-    const isBlocked = await checkAppMaintenance();
-    if (isBlocked) return;
-  }
-
-  showLoading();
-  const date = elDate.value;
-  try {
-    const data = await apiGet(`/api/state?date=${encodeURIComponent(date)}`);
-    
-    if (!data.ok) {
-      if(data.error === 'Unauthorized' && !tg?.initData) {
-        currentUser = { id: 1, first_name: 'Local User' };
-        currentBalance = 5;
-        renderGrid([], 1);
-        setUserUI(currentUser);
-        updateBalanceUI(5, 5, 12);
-        return;
-      }
-      showAlert(data.error || 'Не вдалося завантажити дані');
-      return;
-    }
-
-    currentUser = data.user;
-    currentBalance = data.balance;
-    currentSettings = data.settings || {};
-    renderGrid(data.bookings, data.user.id);
-    setUserUI(data.user);
-    
-    const isPriv = !!data.user.is_privileged;
-    const priceSingle = isPriv ? (data.settings.price_per_wash_privileged || 30) : (data.settings.price_per_wash || 50);
-    const pricePass = isPriv ? (data.settings.subscription_price_privileged || 100) : (data.settings.subscription_price || 150);
-    const subWashes = data.settings.subscription_washes_count || 8;
-
-    elSinglePrice.textContent = `${priceSingle} ₴`;
-    elPassPrice.textContent = `${pricePass} ₴`;
-    document.getElementById('buyPassBtn').querySelector('span').textContent = `Абонемент (${subWashes} прань)`;
-
-    updateBalanceUI(data.balance, data.monthlyCount, data.monthlyLimit);
-  } catch (err) {
-    showAlert('Помилка підключення');
-  } finally {
-    hideLoading();
-  }
-}
 
 async function buy(washes) {
   showLoading();
