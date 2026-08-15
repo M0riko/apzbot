@@ -239,6 +239,33 @@ async function dbRun(sql, params = []) {
   }
 }
 
+// Middleware to block API endpoints during maintenance mode (except config & admin)
+async function checkMaintenance(req, res, next) {
+  if (req.path.startsWith('/admin') || req.path === '/config' || req.path === '/health') {
+    return next();
+  }
+  try {
+    const maintModeSetting = await dbGet("SELECT value FROM Settings WHERE key = 'maintenance_mode'");
+    const isMaintActive = maintModeSetting ? maintModeSetting.value === 'true' : false;
+
+    if (isMaintActive) {
+      const maintPassSetting = await dbGet("SELECT value FROM Settings WHERE key = 'maintenance_password'");
+      const correctPass = maintPassSetting ? maintPassSetting.value : '';
+      const clientPass = req.headers['x-maintenance-password'];
+
+      if (!clientPass || clientPass.trim() !== correctPass.trim()) {
+        return res.json({ ok: false, error: 'maintenance_restricted', error_uk: 'Ведуться технічні роботи. Невірний пароль доступу!' });
+      }
+    }
+    next();
+  } catch (err) {
+    console.error('Maintenance middleware error:', err);
+    next();
+  }
+}
+
+app.use('/api', checkMaintenance);
+
 function verifyInitData(initData) {
   if (!initData) return false;
   const urlParams = new URLSearchParams(initData);
@@ -470,6 +497,16 @@ app.post('/api/book', async (req, res) => {
       return res.json({ ok: false, error: 'Не можна бронювати на минулу дату' });
     }
 
+    // Restrict bookings to the current month only
+    const [bookingYear, bookingMonth] = date.split('-').map(Number);
+    const now = new Date();
+    const currY = now.getFullYear();
+    const currM = now.getMonth() + 1; // 1-indexed
+
+    if (bookingYear !== currY || bookingMonth !== currM) {
+      return res.json({ ok: false, error: 'Бронювання дозволено тільки на поточний місяць' });
+    }
+
     if (date === today) {
       const now = new Date();
       // time_slot format "07:00–09:30" (note the en-dash or hyphen, check previous view_file)
@@ -616,19 +653,7 @@ app.post('/api/payments/create', async (req, res) => {
       return res.json({ ok: false, error: 'Будь ласка, зареєструйтесь спочатку' });
     }
 
-    const { washes, maintenancePassword } = req.body || {};
-
-    // Check maintenance mode
-    const maintModeSetting = await dbGet("SELECT value FROM Settings WHERE key = 'maintenance_mode'");
-    const isMaintActive = maintModeSetting ? maintModeSetting.value === 'true' : false;
-
-    if (isMaintActive) {
-      const maintPassSetting = await dbGet("SELECT value FROM Settings WHERE key = 'maintenance_password'");
-      const correctPass = maintPassSetting ? maintPassSetting.value : '';
-      if (!maintenancePassword || maintenancePassword.trim() !== correctPass.trim()) {
-        return res.json({ ok: false, error: 'maintenance_restricted', error_uk: 'Ведуться технічні роботи. Введено невірний пароль доступу!' });
-      }
-    }
+    const { washes } = req.body || {};
 
     const settings = await dbAll('SELECT * FROM Settings');
     const sMap = {};

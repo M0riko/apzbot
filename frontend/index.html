@@ -215,18 +215,16 @@
     </div>
   </div>
 
-  <!-- MAINTENANCE PASSWORD MODAL -->
-  <div id="maintenanceModal" class="modal hidden">
-    <div class="modal-content glass-panel">
-      <h3>Технічні роботи 🛠️</h3>
-      <p class="hint" style="text-align:left; margin-bottom: 12px;">
-        Ведуться технічні роботи. Для здійснення оплати введіть спеціальний пароль доступу.
+  <!-- FULL SCREEN MAINTENANCE OVERLAY -->
+  <div id="app-maintenance" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.97); backdrop-filter: blur(12px); pointer-events: auto;">
+    <div class="modal-content glass-panel" style="max-width: 90%; width: 340px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.1);">
+      <div style="font-size: 48px; margin-bottom: 16px;">🛠️</div>
+      <h3 style="margin-bottom: 12px; font-size: 20px; color: #fff;">Технічні роботи</h3>
+      <p class="hint" style="text-align: center; margin-bottom: 20px; color: var(--hint-color); padding: 0 10px;">
+        У додатку ведуться технічні роботи. Будь ласка, введіть пароль для доступу або поверніться пізніше.
       </p>
-      <input type="text" id="maintenanceInputPassword" placeholder="Введіть пароль" class="input-field" />
-      <div style="display:flex; gap:8px; margin-top: 16px;">
-        <button id="closeMaintenanceBtn" class="btn-secondary" style="flex:1;">Скасувати</button>
-        <button id="submitMaintenanceBtn" class="btn-primary" style="flex:1;">Підтвердити</button>
-      </div>
+      <input type="password" id="maintAppPassword" placeholder="Пароль доступу" class="input-field" style="text-align: center; margin-bottom: 16px;" />
+      <button id="maintAppSubmitBtn" class="btn-primary" style="width: 100%;">Увійти</button>
     </div>
   </div>
 

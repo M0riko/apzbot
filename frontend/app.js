@@ -47,11 +47,9 @@ const elCloseFaq = document.getElementById('closeFaqBtn');
 const elCloseFaqTop = document.getElementById('closeFaqBtnTop');
 
 // Maintenance Mode Elements
-const elMaintenanceModal = document.getElementById('maintenanceModal');
-const elMaintenanceInputPassword = document.getElementById('maintenanceInputPassword');
-const elCloseMaintenanceBtn = document.getElementById('closeMaintenanceBtn');
-const elSubmitMaintenanceBtn = document.getElementById('submitMaintenanceBtn');
-let pendingWashesToBuy = null;
+const elAppMaintenanceOverlay = document.getElementById('app-maintenance');
+const elMaintAppPasswordInput = document.getElementById('maintAppPassword');
+const elMaintAppSubmitBtn = document.getElementById('maintAppSubmitBtn');
 
 let currentUser = null;
 let currentBalance = 0;
@@ -111,9 +109,11 @@ function setUserUI(user) {
 
 async function apiGet(path) {
   const init = getInitData();
+  const maintPass = localStorage.getItem('app_maint_password') || '';
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
-      'x-telegram-init': init?.initData || ''
+      'x-telegram-init': init?.initData || '',
+      'x-maintenance-password': maintPass
     }
   });
   return res.json();
@@ -121,11 +121,13 @@ async function apiGet(path) {
 
 async function apiPost(path, body) {
   const init = getInitData();
+  const maintPass = localStorage.getItem('app_maint_password') || '';
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-telegram-init': init?.initData || ''
+      'x-telegram-init': init?.initData || '',
+      'x-maintenance-password': maintPass
     },
     body: JSON.stringify(body)
   });
@@ -323,30 +325,85 @@ async function handleCancel(timeSlot, machineId) {
   }
 }
 
-async function buy(washes) {
-  showLoading();
+async function checkAppMaintenance() {
   try {
     const configRes = await apiGet('/api/config');
-    if (configRes && configRes.ok && configRes.maintenanceMode) {
-      hideLoading();
-      pendingWashesToBuy = washes;
-      elMaintenanceInputPassword.value = '';
-      elMaintenanceModal.classList.remove('hidden');
-      return;
-    }
+    const maintOverlay = document.getElementById('app-maintenance');
     
-    // Normal purchase
-    await executeBuy(washes, '');
+    if (configRes && configRes.ok && configRes.maintenanceMode) {
+      const savedPass = localStorage.getItem('app_maint_password');
+      if (savedPass) {
+        const date = elDate.value;
+        const testRes = await apiGet(`/api/state?date=${encodeURIComponent(date)}`);
+        if (testRes && testRes.ok) {
+          maintOverlay.classList.add('hidden');
+          return false;
+        }
+      }
+      maintOverlay.classList.remove('hidden');
+      return true;
+    } else {
+      maintOverlay.classList.add('hidden');
+      localStorage.removeItem('app_maint_password');
+      return false;
+    }
   } catch (err) {
-    hideLoading();
-    showAlert('Сталася помилка при перевірці статусу');
+    console.error('Error checking maintenance:', err);
+    return false;
   }
 }
 
-async function executeBuy(washes, maintenancePassword) {
+async function loadState(skipMaintenanceCheck = false) {
+  if (!skipMaintenanceCheck) {
+    const isBlocked = await checkAppMaintenance();
+    if (isBlocked) return;
+  }
+
+  showLoading();
+  const date = elDate.value;
+  try {
+    const data = await apiGet(`/api/state?date=${encodeURIComponent(date)}`);
+    
+    if (!data.ok) {
+      if(data.error === 'Unauthorized' && !tg?.initData) {
+        currentUser = { id: 1, first_name: 'Local User' };
+        currentBalance = 5;
+        renderGrid([], 1);
+        setUserUI(currentUser);
+        updateBalanceUI(5, 5, 12);
+        return;
+      }
+      showAlert(data.error || 'Не вдалося завантажити дані');
+      return;
+    }
+
+    currentUser = data.user;
+    currentBalance = data.balance;
+    currentSettings = data.settings || {};
+    renderGrid(data.bookings, data.user.id);
+    setUserUI(data.user);
+    
+    const isPriv = !!data.user.is_privileged;
+    const priceSingle = isPriv ? (data.settings.price_per_wash_privileged || 30) : (data.settings.price_per_wash || 50);
+    const pricePass = isPriv ? (data.settings.subscription_price_privileged || 100) : (data.settings.subscription_price || 150);
+    const subWashes = data.settings.subscription_washes_count || 8;
+
+    elSinglePrice.textContent = `${priceSingle} ₴`;
+    elPassPrice.textContent = `${pricePass} ₴`;
+    document.getElementById('buyPassBtn').querySelector('span').textContent = `Абонемент (${subWashes} прань)`;
+
+    updateBalanceUI(data.balance, data.monthlyCount, data.monthlyLimit);
+  } catch (err) {
+    showAlert('Помилка підключення');
+  } finally {
+    hideLoading();
+  }
+}
+
+async function buy(washes) {
   showLoading();
   try {
-    const res = await apiPost('/api/payments/create', { washes, maintenancePassword });
+    const res = await apiPost('/api/payments/create', { washes });
     if (!res.ok) {
       if (res.error === 'maintenance_restricted') {
         showAlert(res.error_uk || 'Доступ обмежено: невірний пароль!');
@@ -462,8 +519,11 @@ function bindEvents() {
     elNextDateBtn.addEventListener('click', () => {
       const d = new Date(elDate.value);
       d.setDate(d.getDate() + 1);
-      elDate.value = d.toISOString().split('T')[0];
-      loadState();
+      const iso = d.toISOString().split('T')[0];
+      if (!elDate.max || iso <= elDate.max) {
+        elDate.value = iso;
+        loadState();
+      }
     });
   }
 
@@ -545,20 +605,37 @@ function bindEvents() {
     });
   }
 
-  // Maintenance Modal Events
-  if (elCloseMaintenanceBtn) {
-    elCloseMaintenanceBtn.addEventListener('click', () => {
-      elMaintenanceModal.classList.add('hidden');
-      pendingWashesToBuy = null;
-    });
-  }
+  // Global App Maintenance Submit
+  const btnAppMaintSubmit = document.getElementById('maintAppSubmitBtn');
+  const inputAppMaintPass = document.getElementById('maintAppPassword');
 
-  if (elSubmitMaintenanceBtn) {
-    elSubmitMaintenanceBtn.addEventListener('click', async () => {
-      const password = elMaintenanceInputPassword.value;
-      elMaintenanceModal.classList.add('hidden');
-      if (pendingWashesToBuy !== null) {
-        await executeBuy(pendingWashesToBuy, password);
+  if (btnAppMaintSubmit) {
+    btnAppMaintSubmit.addEventListener('click', async () => {
+      const password = inputAppMaintPass.value;
+      if (!password || !password.trim()) {
+        showAlert('Будь ласка, введіть пароль!');
+        return;
+      }
+      
+      localStorage.setItem('app_maint_password', password.trim());
+      showLoading();
+      
+      try {
+        const date = elDate.value;
+        const testRes = await apiGet(`/api/state?date=${encodeURIComponent(date)}`);
+        hideLoading();
+        
+        if (testRes && testRes.ok) {
+          document.getElementById('app-maintenance').classList.add('hidden');
+          loadState(true);
+        } else {
+          localStorage.removeItem('app_maint_password');
+          showAlert(testRes.error_uk || 'Невірний пароль!');
+        }
+      } catch (err) {
+        hideLoading();
+        localStorage.removeItem('app_maint_password');
+        showAlert('Помилка підключення');
       }
     });
   }
@@ -584,6 +661,17 @@ function init() {
   const today = todayISO();
   elDate.value = today;
   elDate.min = today;
+
+  // Set maximum date to the last day of the current month
+  const lastDayOfCurrentMonth = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const lastDay = new Date(y, m, 0).getDate();
+    return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  };
+  elDate.max = lastDayOfCurrentMonth();
+
   bindEvents();
   loadState();
 
