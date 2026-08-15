@@ -394,21 +394,21 @@ if (elOpenClaim) {
   elCloseClaim.addEventListener('click', () => elClaimModal.classList.add('hidden'));
 
   elSubmitClaim.addEventListener('click', async () => {
-    const amount = Number(elClaimAmount.value);
-    if (!amount || amount <= 0) {
-      showAlert('Введіть коректну суму');
+    const rawVal = elClaimAmount.value.trim();
+    if (!rawVal) {
+      showAlert('Введіть суму або код оплати');
       return;
     }
     
     showLoading();
     try {
-      const res = await apiPost('/api/payments/claim', { exactAmount: amount });
+      const res = await apiPost('/api/payments/claim', { query: rawVal });
       if (res.ok) {
         showAlert(res.message);
         elClaimModal.classList.add('hidden');
         loadState();
       } else {
-        showAlert(res.error);
+        showAlert(res.error || 'Не вдалося знайти оплату');
       }
     } catch (e) {
       showAlert('Помилка сервера');

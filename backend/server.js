@@ -82,6 +82,12 @@ function prepareQuery(sql, params) {
 
   let pgSql = sql;
 
+  // Cast text comparison for expiresAt and receivedAt in PostgreSQL to prevent operator text > timestamp mismatch
+  pgSql = pgSql.replace(/expiresAt\s*>\s*datetime\(['"]now['"]\)/gi, "CAST(expiresAt AS TIMESTAMPTZ) > CURRENT_TIMESTAMP");
+  pgSql = pgSql.replace(/expiresAt\s*<\s*datetime\(['"]now['"]\)/gi, "CAST(expiresAt AS TIMESTAMPTZ) < CURRENT_TIMESTAMP");
+  pgSql = pgSql.replace(/receivedAt\s*>=\s*datetime\(['"]now['"]\s*,\s*['"]-2 hours['"]\)/gi, "CAST(receivedAt AS TIMESTAMPTZ) >= (CURRENT_TIMESTAMP - INTERVAL '2 hours')");
+  pgSql = pgSql.replace(/receivedAt\s*>=\s*datetime\(['"]now['"]\s*,\s*['"]-24 hours['"]\)/gi, "CAST(receivedAt AS TIMESTAMPTZ) >= (CURRENT_TIMESTAMP - INTERVAL '24 hours')");
+
   // Replace datetime("now") or datetime('now') with CURRENT_TIMESTAMP
   pgSql = pgSql.replace(/datetime\(['"]now['"]\)/gi, 'CURRENT_TIMESTAMP');
 
@@ -774,40 +780,104 @@ app.post('/api/payments/claim', async (req, res) => {
     const tgUser = requireTelegram(req, res);
     if (!tgUser) return;
 
-    const { exactAmount } = req.body || {};
-    if (!exactAmount) return res.json({ ok: false, error: 'Вкажіть точну суму' });
+    const { query: searchQuery } = req.body || {};
+    if (!searchQuery) return res.json({ ok: false, error: 'Вкажіть суму або код оплати' });
 
     const user = await getOrCreateUser(tgUser);
+    const cleanQuery = searchQuery.trim().toUpperCase();
 
-    const lost = await dbAll(
-      "SELECT * FROM UnresolvedPayments WHERE amount = ? AND status = 'UNCLAIMED' AND receivedAt >= datetime('now', '-2 hours')",
-      [exactAmount]
-    );
+    // Check if it's a 6-character code
+    const isCode = /^[A-Z0-9]{6}$/.test(cleanQuery);
 
-    if (lost.length === 1) {
-      const lostTx = lost[0];
-      await dbRun("UPDATE UnresolvedPayments SET status = 'CLAIMED' WHERE id = ?", [lostTx.id]);
-
-      const settings = await dbAll('SELECT * FROM Settings');
-      const sMap = {};
-      settings.forEach(s => sMap[s.key] = s.value);
-
-      const isPriv = !!user.is_privileged;
-      const subPrice = Number(isPriv ? (sMap.subscription_price_privileged || 100) : (sMap.subscription_price || 150));
-      const subWashes = Number(sMap.subscription_washes_count || 8);
-
-      let washesAdded = 1;
-      if (exactAmount >= subPrice) {
-        washesAdded = subWashes;
+    if (isCode) {
+      // 1. Search in Transactions
+      const tx = await dbGet("SELECT * FROM Transactions WHERE paymentKey = ?", [cleanQuery]);
+      if (!tx) {
+        return res.json({ ok: false, error: 'Оплату з цим кодом не знайдено в системі' });
+      }
+      if (tx.status === 'SUCCESS') {
+        return res.json({ ok: true, message: 'Цей платіж уже успішно зараховано!' });
       }
 
-      await dbRun('UPDATE Users SET balance = balance + ? WHERE id = ?', [washesAdded, user.id]);
-      res.json({ ok: true, message: 'Оплата знайдена та зарахована!' });
-    } else if (lost.length > 1) {
-      res.json({ ok: false, error: 'Знайдено кілька схожих платежів. Зверніться до підтримки.' });
+      // 2. Search in UnresolvedPayments
+      const unresolved = await dbGet("SELECT * FROM UnresolvedPayments WHERE comment = ? AND status = 'UNCLAIMED'", [cleanQuery]);
+      if (unresolved) {
+        // Credit it
+        await dbRun("UPDATE UnresolvedPayments SET status = 'CLAIMED' WHERE id = ?", [unresolved.id]);
+        await dbRun("UPDATE Transactions SET status = 'SUCCESS', actualAmount = ?, updatedAt = datetime('now') WHERE id = ?", [unresolved.amount, tx.id]);
+        await dbRun("UPDATE Users SET balance = balance + ? WHERE id = ?", [tx.washesAdded, user.id]);
+        return res.json({ ok: true, message: `Оплату знайдено! Нараховано ${tx.washesAdded} прань.` });
+      }
+
+      // 3. Try to fetch fresh statements from Monobank to find it
+      const jarId = await getMonoJarId();
+      if (jarId) {
+        const now = Math.floor(Date.now() / 1000);
+        const fromTime = now - 12 * 60 * 60; // search last 12 hours
+        const statement = await monoApiGet(`/personal/statement/${jarId}/${fromTime}/${now}`);
+        if (Array.isArray(statement)) {
+          const matchedTx = statement.find(t => t.comment && t.comment.trim().toUpperCase() === cleanQuery);
+          if (matchedTx) {
+            const amount = matchedTx.amount / 100;
+            const monoId = matchedTx.id;
+            
+            const already = await dbGet('SELECT id FROM UnresolvedPayments WHERE monobankTransactionId = ?', [monoId]);
+            if (!already) {
+              await dbRun("UPDATE Transactions SET status = 'SUCCESS', actualAmount = ?, updatedAt = datetime('now') WHERE id = ?", [amount, tx.id]);
+              await dbRun("UPDATE Users SET balance = balance + ? WHERE id = ?", [tx.washesAdded, user.id]);
+              
+              const uuid = randomUUID();
+              await dbRun(
+                "INSERT INTO UnresolvedPayments (id, monobankTransactionId, amount, senderName, comment, status) VALUES (?, ?, ?, ?, ?, 'CLAIMED')",
+                [uuid, monoId, amount, matchedTx.description || '', cleanQuery]
+              );
+              return res.json({ ok: true, message: `Оплату знайдено в банку та зараховано! Нараховано ${tx.washesAdded} прань.` });
+            }
+          }
+        }
+      }
+
+      return res.json({ ok: false, error: 'Платіж не знайдено в банку. Перевірте статус у Monobank або зачекайте 1-2 хвилини.' });
+
     } else {
-      res.json({ ok: false, error: 'Оплату не знайдено. Перевірте суму або зачекайте кілька хвилин.' });
+      // Treat as amount search
+      const exactAmount = Number(cleanQuery);
+      if (isNaN(exactAmount) || exactAmount <= 0) {
+        return res.json({ ok: false, error: 'Введіть коректну суму або 6-значний код' });
+      }
+
+      // Search UnresolvedPayments in the last 24 hours
+      const lost = await dbAll(
+        "SELECT * FROM UnresolvedPayments WHERE amount = ? AND status = 'UNCLAIMED' AND receivedAt >= datetime('now', '-24 hours')",
+        [exactAmount]
+      );
+
+      if (lost.length === 1) {
+        const lostTx = lost[0];
+        await dbRun("UPDATE UnresolvedPayments SET status = 'CLAIMED' WHERE id = ?", [lostTx.id]);
+
+        const settings = await dbAll('SELECT * FROM Settings');
+        const sMap = {};
+        settings.forEach(s => sMap[s.key] = s.value);
+
+        const isPriv = !!user.is_privileged;
+        const subPrice = Number(isPriv ? (sMap.subscription_price_privileged || 100) : (sMap.subscription_price || 150));
+        const subWashes = Number(sMap.subscription_washes_count || 8);
+
+        let washesAdded = 1;
+        if (exactAmount >= subPrice) {
+          washesAdded = subWashes;
+        }
+
+        await dbRun('UPDATE Users SET balance = balance + ? WHERE id = ?', [washesAdded, user.id]);
+        res.json({ ok: true, message: `Оплату знайдено та зараховано! Додано ${washesAdded} прань.` });
+      } else if (lost.length > 1) {
+        res.json({ ok: false, error: 'Знайдено кілька схожих платежів на цю суму. Зверніться до підтримки.' });
+      } else {
+        res.json({ ok: false, error: 'Оплату не знайдено за останні 24 години. Спробуйте пошук за кодом оплати.' });
+      }
     }
+
   } catch (err) {
     console.error(err);
     res.json({ ok: false, error: 'Server error' });
