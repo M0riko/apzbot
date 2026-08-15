@@ -750,6 +750,12 @@ app.post('/api/webhooks/monobank', async (req, res) => {
     );
 
     if (existingTx) {
+      if (Math.abs(amount - existingTx.requestedAmount) >= 0.01) {
+        console.log(`[Monobank Webhook] Mismatched amount for ${comment}: expected ${existingTx.requestedAmount}, got ${amount}. Saving to unresolved.`);
+        await saveUnresolved(monoId, amount, senderName, comment);
+        bot.sendMessage(existingTx.userId, `⚠️ Отримано платіж на суму ${amount} грн, але очікувалось ${existingTx.requestedAmount} грн. Переказ збережено як нерозпізнаний. Зверніться до адміністратора.`).catch(console.error);
+        return;
+      }
       console.log(`[Monobank Webhook] Found matching transaction for ${comment}. Crediting ${existingTx.washesAdded} washes.`);
       await dbRun("UPDATE Transactions SET status = ?, actualAmount = ?, updatedAt = datetime('now') WHERE id = ?", ['SUCCESS', amount, existingTx.id]);
       await dbRun('UPDATE Users SET balance = balance + ? WHERE id = ?', [existingTx.washesAdded, existingTx.userId]);
@@ -802,6 +808,9 @@ app.post('/api/payments/claim', async (req, res) => {
       // 2. Search in UnresolvedPayments
       const unresolved = await dbGet("SELECT * FROM UnresolvedPayments WHERE comment = ? AND status = 'UNCLAIMED'", [cleanQuery]);
       if (unresolved) {
+        if (Math.abs(unresolved.amount - tx.requestedAmount) >= 0.01) {
+          return res.json({ ok: false, error: `Сума платежу в банку (${unresolved.amount} грн) не збігається з очікуваною (${tx.requestedAmount} грн).` });
+        }
         // Credit it
         await dbRun("UPDATE UnresolvedPayments SET status = 'CLAIMED' WHERE id = ?", [unresolved.id]);
         await dbRun("UPDATE Transactions SET status = 'SUCCESS', actualAmount = ?, updatedAt = datetime('now') WHERE id = ?", [unresolved.amount, tx.id]);
@@ -819,6 +828,9 @@ app.post('/api/payments/claim', async (req, res) => {
           const matchedTx = statement.find(t => t.comment && t.comment.trim().toUpperCase() === cleanQuery);
           if (matchedTx) {
             const amount = matchedTx.amount / 100;
+            if (Math.abs(amount - tx.requestedAmount) >= 0.01) {
+              return res.json({ ok: false, error: `Сума платежу в банку (${amount} грн) не збігається з очікуваною (${tx.requestedAmount} грн).` });
+            }
             const monoId = matchedTx.id;
             
             const already = await dbGet('SELECT id FROM UnresolvedPayments WHERE monobankTransactionId = ?', [monoId]);
@@ -951,6 +963,12 @@ async function processMonoTransaction(tx) {
   );
 
   if (existingTx) {
+    if (Math.abs(amount - existingTx.requestedAmount) >= 0.01) {
+      console.log(`[Monobank Poller] Mismatched amount for ${comment}: expected ${existingTx.requestedAmount}, got ${amount}. Saving to unresolved.`);
+      await saveUnresolved(monoId, amount, tx.description || '', comment);
+      bot.sendMessage(existingTx.userId, `⚠️ Отримано платіж на суму ${amount} грн, але очікувалось ${existingTx.requestedAmount} грн. Переказ збережено як нерозпізнаний. Зверніться до адміністратора.`).catch(console.error);
+      return;
+    }
     await dbRun("UPDATE Transactions SET status = ?, actualAmount = ?, updatedAt = datetime('now') WHERE id = ?", ['SUCCESS', amount, existingTx.id]);
     await dbRun('UPDATE Users SET balance = balance + ? WHERE id = ?', [existingTx.washesAdded, existingTx.userId]);
     console.log(`[Monobank Poller] Зараховано ${amount} грн (${comment}) → +${existingTx.washesAdded} прань`);
