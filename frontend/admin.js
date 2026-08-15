@@ -637,6 +637,32 @@ async function loadSettings() {
     document.getElementById('settingSubscriptionWashes').value = res.settings.subscription_washes_count || 8;
     document.getElementById('settingSubscriptionPrice').value = res.settings.subscription_price || 150;
     document.getElementById('settingSubscriptionPricePrivileged').value = res.settings.subscription_price_privileged || 100;
+
+    // Render maintenance mode settings
+    const maintActive = res.settings.maintenance_mode === 'true';
+    const maintPass = res.settings.maintenance_password || '';
+
+    const badge = document.getElementById('maintenanceStatusBadge');
+    const passInput = document.getElementById('maintenancePassword');
+    const btnEnable = document.getElementById('btnEnableMaintenance');
+    const btnDisable = document.getElementById('btnDisableMaintenance');
+
+    if (badge) {
+      if (maintActive) {
+        badge.className = 'status status-expired';
+        badge.textContent = 'Увімкнено (Активний)';
+        if (btnEnable) btnEnable.style.display = 'none';
+        if (btnDisable) btnDisable.style.display = 'inline-block';
+      } else {
+        badge.className = 'status status-success';
+        badge.textContent = 'Вимкнено (Всі оплати доступні)';
+        if (btnEnable) btnEnable.style.display = 'inline-block';
+        if (btnDisable) btnDisable.style.display = 'none';
+      }
+    }
+    if (passInput) {
+      passInput.value = maintPass;
+    }
   }
 }
 
@@ -656,5 +682,41 @@ if (typeof io !== 'undefined') {
   socket.on('update', () => {
     console.log('Real-time update received');
     loadAll();
+  });
+}
+
+// Maintenance Mode Event Listeners
+const btnEnableMaint = document.getElementById('btnEnableMaintenance');
+const btnDisableMaint = document.getElementById('btnDisableMaintenance');
+
+if (btnEnableMaint) {
+  btnEnableMaint.addEventListener('click', async () => {
+    const password = document.getElementById('maintenancePassword').value;
+    if (!password || !password.trim()) {
+      alert('Будь ласка, введіть пароль для ввімкнення техробіт!');
+      return;
+    }
+
+    const res1 = await adminFetch('/api/admin/settings/update', { method: 'POST', body: { key: 'maintenance_mode', value: 'true' } });
+    const res2 = await adminFetch('/api/admin/settings/update', { method: 'POST', body: { key: 'maintenance_password', value: password.trim() } });
+
+    if (res1.ok && res2.ok) {
+      toast('Режим техробіт увімкнено!');
+      loadSettings();
+    } else {
+      toast('Помилка ввімкнення', '#ef4444');
+    }
+  });
+}
+
+if (btnDisableMaint) {
+  btnDisableMaint.addEventListener('click', async () => {
+    const res = await adminFetch('/api/admin/settings/update', { method: 'POST', body: { key: 'maintenance_mode', value: 'false' } });
+    if (res.ok) {
+      toast('Режим техробіт вимкнено!');
+      loadSettings();
+    } else {
+      toast('Помилка вимкнення', '#ef4444');
+    }
   });
 }

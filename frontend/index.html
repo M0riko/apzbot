@@ -215,6 +215,21 @@
     </div>
   </div>
 
+  <!-- MAINTENANCE PASSWORD MODAL -->
+  <div id="maintenanceModal" class="modal hidden">
+    <div class="modal-content glass-panel">
+      <h3>Технічні роботи 🛠️</h3>
+      <p class="hint" style="text-align:left; margin-bottom: 12px;">
+        Ведуться технічні роботи. Для здійснення оплати введіть спеціальний пароль доступу.
+      </p>
+      <input type="text" id="maintenanceInputPassword" placeholder="Введіть пароль" class="input-field" />
+      <div style="display:flex; gap:8px; margin-top: 16px;">
+        <button id="closeMaintenanceBtn" class="btn-secondary" style="flex:1;">Скасувати</button>
+        <button id="submitMaintenanceBtn" class="btn-primary" style="flex:1;">Підтвердити</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

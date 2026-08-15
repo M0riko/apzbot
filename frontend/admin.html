@@ -484,6 +484,32 @@
       </div>
 
     </div>
+
+    <!-- MAINTENANCE MODE SECTION -->
+    <div class="card" style="margin-top:20px;">
+      <h3 style="margin-bottom:16px;">🔧 Режим технічних робіт (Maintenance Mode)</h3>
+      <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">
+        Коли режим техробіт увімкнено, звичайні користувачі не зможуть створювати оплати без введення встановленого пароля.
+      </p>
+
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:14px; font-weight:bold; color:var(--text);">Статус:</span>
+          <span id="maintenanceStatusBadge" class="status status-success" style="padding:4px 8px; border-radius:4px; font-size:12px;">Завантаження...</span>
+        </div>
+
+        <div id="maintenancePasswordGroup" class="input-group" style="margin:0;">
+          <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">Пароль для доступу до оплати</label>
+          <input type="text" id="maintenancePassword" class="input-field" style="margin:0; max-width:250px;" placeholder="Введіть код доступу">
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <button id="btnEnableMaintenance" class="btn btn-danger" style="display:none; background:#ef4444; color:white;">Увімкнути режим техробіт</button>
+          <button id="btnDisableMaintenance" class="btn btn-primary" style="display:none; background:#10b981; color:white;">Вимкнути режим техробіт</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 

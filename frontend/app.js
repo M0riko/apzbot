@@ -46,6 +46,13 @@ const elOpenFaq = document.getElementById('openFaqBtn');
 const elCloseFaq = document.getElementById('closeFaqBtn');
 const elCloseFaqTop = document.getElementById('closeFaqBtnTop');
 
+// Maintenance Mode Elements
+const elMaintenanceModal = document.getElementById('maintenanceModal');
+const elMaintenanceInputPassword = document.getElementById('maintenanceInputPassword');
+const elCloseMaintenanceBtn = document.getElementById('closeMaintenanceBtn');
+const elSubmitMaintenanceBtn = document.getElementById('submitMaintenanceBtn');
+let pendingWashesToBuy = null;
+
 let currentUser = null;
 let currentBalance = 0;
 let currentSettings = null;
@@ -319,11 +326,34 @@ async function handleCancel(timeSlot, machineId) {
 async function buy(washes) {
   showLoading();
   try {
-    const res = await apiPost('/api/payments/create', { washes });
+    const configRes = await apiGet('/api/config');
+    if (configRes && configRes.ok && configRes.maintenanceMode) {
+      hideLoading();
+      pendingWashesToBuy = washes;
+      elMaintenanceInputPassword.value = '';
+      elMaintenanceModal.classList.remove('hidden');
+      return;
+    }
+    
+    // Normal purchase
+    await executeBuy(washes, '');
+  } catch (err) {
+    hideLoading();
+    showAlert('Сталася помилка при перевірці статусу');
+  }
+}
+
+async function executeBuy(washes, maintenancePassword) {
+  showLoading();
+  try {
+    const res = await apiPost('/api/payments/create', { washes, maintenancePassword });
     if (!res.ok) {
-      showAlert(res.error || 'Не вдалося створити заявку');
+      if (res.error === 'maintenance_restricted') {
+        showAlert(res.error_uk || 'Доступ обмежено: невірний пароль!');
+      } else {
+        showAlert(res.error || 'Не вдалося створити заявку');
+      }
     } else {
-      // Comment (paymentKey) is auto-filled via the 't' URL param — no manual input needed
       if (tg && tg.openLink) {
         tg.openLink(res.deepLink);
       } else {
@@ -331,7 +361,7 @@ async function buy(washes) {
       }
     }
   } catch (err) {
-    showAlert('Сталася помилка');
+    showAlert('Сталася помилка при створенні оплати');
   } finally {
     hideLoading();
   }
@@ -511,6 +541,24 @@ function bindEvents() {
       } else {
         elRegSubmit.disabled = true;
         elRegSubmit.style.opacity = '0.5';
+      }
+    });
+  }
+
+  // Maintenance Modal Events
+  if (elCloseMaintenanceBtn) {
+    elCloseMaintenanceBtn.addEventListener('click', () => {
+      elMaintenanceModal.classList.add('hidden');
+      pendingWashesToBuy = null;
+    });
+  }
+
+  if (elSubmitMaintenanceBtn) {
+    elSubmitMaintenanceBtn.addEventListener('click', async () => {
+      const password = elMaintenanceInputPassword.value;
+      elMaintenanceModal.classList.add('hidden');
+      if (pendingWashesToBuy !== null) {
+        await executeBuy(pendingWashesToBuy, password);
       }
     });
   }

@@ -327,8 +327,14 @@ app.get('/health', (req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
 });
 
-app.get('/api/config', (req, res) => {
-  res.json({ ok: true, botUsername });
+app.get('/api/config', async (req, res) => {
+  try {
+    const maintModeSetting = await dbGet("SELECT value FROM Settings WHERE key = 'maintenance_mode'");
+    const isMaintActive = maintModeSetting ? maintModeSetting.value === 'true' : false;
+    res.json({ ok: true, botUsername, maintenanceMode: isMaintActive });
+  } catch (err) {
+    res.json({ ok: true, botUsername, maintenanceMode: false });
+  }
 });
 
 app.get('/api/state', async (req, res) => {
@@ -610,7 +616,19 @@ app.post('/api/payments/create', async (req, res) => {
       return res.json({ ok: false, error: 'Будь ласка, зареєструйтесь спочатку' });
     }
 
-    const { washes } = req.body || {};
+    const { washes, maintenancePassword } = req.body || {};
+
+    // Check maintenance mode
+    const maintModeSetting = await dbGet("SELECT value FROM Settings WHERE key = 'maintenance_mode'");
+    const isMaintActive = maintModeSetting ? maintModeSetting.value === 'true' : false;
+
+    if (isMaintActive) {
+      const maintPassSetting = await dbGet("SELECT value FROM Settings WHERE key = 'maintenance_password'");
+      const correctPass = maintPassSetting ? maintPassSetting.value : '';
+      if (!maintenancePassword || maintenancePassword.trim() !== correctPass.trim()) {
+        return res.json({ ok: false, error: 'maintenance_restricted', error_uk: 'Ведуться технічні роботи. Введено невірний пароль доступу!' });
+      }
+    }
 
     const settings = await dbAll('SELECT * FROM Settings');
     const sMap = {};
